@@ -1,0 +1,54 @@
+#!/bin/sh
+#### Begin PBS preamble
+#PBS -N PleioRep2mapping
+#
+#PBS -M pvzande@umich.edu
+#PBS -m abe
+#
+#PBS -l procs=4,mem=16gb
+#PBS -l walltime=0:30:00
+#PBS -j oe
+#PBS -t 19981-20032
+#PBS -V
+#PBS -A lsa_flux
+#PBS -l qos=flux
+#PBS -q flux
+#### End PBS preamble
+
+#remember to load:
+# bowtie2/2.3.2 which requires module intel/17.0.1
+# cutadapt/1.10
+# samtools/1.5
+
+cd /scratch/lsa_flux/pvzande/PleioRep2111518/Sample_1${PBS_ARRAYID}
+
+
+echo Begin cutadapt
+date +"%T"
+
+cutadapt -a AATGATACGGCGACCACCGAGATCTACACNNNNNNNNACACTCTTTCCCTACACGACGCTCTTCCGATCT -O 6 -n 2 -m 15 -o Firstclip.fastq 1${PBS_ARRAYID}*.fastq.gz
+cutadapt -a GATCGGAAGAGCACACGTCTGAACTCCAGTCACNNNNNNNNATCTCGTATGCCGTCTTCTGCTTG -O 6 -n 2 -m 15 -o Secondclip.fastq Firstclip.fastq
+
+echo CutAdapt Finished
+date +"%T"
+
+echo Bowtie begun
+###Note - using Bowtie2/2.3.2
+date +"%T"
+
+bowtie2 -t -q --phred33 --very-sensitive --score-min L,-0.6,-0.6 -p 8 -x /scratch/lsa_flux/pvzande/PleioRep1032818/reference_genome/S288C_reference_genome_R64-2-1_20150113/yeast_genome_reference -U Secondclip.fastq -S Firstmap.sam --un ./Unmapped1.fastq
+
+bowtie2 -t -q --phred33 --very-sensitive --score-min L,-0.6,-0.6 -p 8 -x /scratch/lsa_flux/pvzande/PleioRep1032818/reference_genome/transgenes -U Unmapped1.fastq -S Transgenesmap.sam
+
+
+echo Bowtie Finished
+date +"%T"
+
+samtools view -hb -o Rep2Sample${PBS_ARRAYID}.bam Firstmap.sam
+samtools view -hb -o Rep2Sample${PBS_ARRAYID}tg.bam Transgenesmap.sam
+
+samtools sort -o Rep2Sample${PBS_ARRAYID}.SORT.bam -O bam -T Rep2Sample${PBS_ARRAYID}.temp1 Rep2Sample${PBS_ARRAYID}.bam
+samtools sort -o Rep2Sample${PBS_ARRAYID}tg.SORT.bam -O bam -T Rep2Sample${PBS_ARRAYID}tg.temp1 Rep2Sample${PBS_ARRAYID}tg.bam
+
+samtools index Rep2Sample${PBS_ARRAYID}.SORT.bam
+samtools index Rep2Sample${PBS_ARRAYID}tg.SORT.bam

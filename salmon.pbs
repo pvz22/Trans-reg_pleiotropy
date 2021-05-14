@@ -1,0 +1,24 @@
+#!/bin/sh
+#### Begin PBS preamble
+#PBS -N PleioRep2salmon
+#
+#PBS -M pvzande@umich.edu
+#PBS -m abe
+#
+#PBS -l procs=4,mem=16gb
+#PBS -l walltime=0:20:00
+#PBS -j oe
+#PBS -t 19981-20032
+#PBS -V
+#PBS -A lsa_flux
+#PBS -l qos=flux
+#PBS -q flux
+#### End PBS preamble
+
+#Remember to load salmon/0.9.1
+
+cd /scratch/lsa_flux/pvzande/PleioRep2111518/Sample_1${PBS_ARRAYID}
+
+salmon quant -i ./../reference_genome/transcriptome_index -l A \
+         -r Secondclip.fastq \
+         -p 8 -o quants/Sample1${PBS_ARRAYID}_quant
