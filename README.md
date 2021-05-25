@@ -1,9 +1,9 @@
 # Trans-reg_pleiotropy
 
 This repository includes data and all code necessary to recreate analysis and figures as published in:
-{CITE}
+{CITE} "Pleiotropic effects of trans-regulatory mutations on gene expression and fitness"
 
-Both raw and processed sequencing data are located at GEO accession #: {ADD}
+Both raw and processed sequencing data are located at GEO accession #: GSE175398
 
 Files created in "Growthrate.R" and "DESeqProcessing.R" are used in "Peio_cis_trans_analysis.R".
 
