@@ -5,7 +5,7 @@ This repository includes data and all code necessary to recreate analysis and fi
 
 Both raw and processed sequencing data are located at GEO accession #: GSE175398
 
-Files created in "Growthrate.R" and "DESeqProcessing.R" are used in "Peio_cis_trans_analysis.R".
+Files created in "Growthrate.R", "Deletionpleiotropy.R", and "DESeqProcessing.R" are used in "Peio_cis_trans_analysis.R".
 
 If you would like to begin at "Pleio_cis_trans_analysis.R", simply use the DEseq2 output files for each strain that are available at GEO.
 
