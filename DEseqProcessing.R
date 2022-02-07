@@ -2,18 +2,20 @@
 ###RNAseq analysis pipeline and QC
 #########################################
 #Contents:
-#1. Import of salmon count matrices and DESeq2 modeling and contrasts  ---> line 10
-#2. Comparison of TDH3 values expected based on fluorescence and RNA seq estimates  ---> line 224
-#3. Other QC  ---> line 317
+#1. Import of salmon count matrices and DESeq2 modeling and contrasts
+#2. Comparison of TDH3 values expected based on fluorescence and RNA seq estimates
+#3. Other QC
 
 #########################################
 ##1. Import of count data and DESeq2 analysis
 rm(list = ls())
-options(stringsAsFactors = F)
+options(stringsAsFactors = FALSE)
 library(tximport)
 library(TxDb.Scerevisiae.UCSC.sacCer3.sgdGene)
 library(DESeq2)
 library(ggplot2)
+library(cowplot)
+library(pheatmap)
 
 THEMEMAIN <- function() { #Theme for figure generation
   theme_bw() +
@@ -27,14 +29,14 @@ salmondir <- "/Users/petravandezande/Documents/Output/Projects/Pleiotropy/Salmon
 samples <- read.table(paste0(salmondir,"samples4fix.txt"), header=TRUE) #read in txt file of samples identities
 rownames(samples) <- samples$SampleID #give it rownames
 
-#Splitting samples into different background groups
+#Splitting samples into different background groups, and background references to compare
 alphasamples <- samples[!samples$condition %in% c('C','B','GG','M','BB','MM','TT','K'),]
 auramsamples <- samples[samples$condition %in% c('C','B','GG','M','TT','K'),]
 aurapsamples <- samples[samples$condition %in% c('MM','BB'),]
-refssamples <- samples[samples$condition %in% c('A',"TT"),]
+refssamples <- samples[samples$condition %in% c('A',"TT",'BB'),]
 
 ###################
-#Contrasting alpha and a reference strains
+#Contrasting alpha and a reference strains and overexpression strain containing ura
 ##################
 #Reading in the data for the transgenes present
 files <- file.path(dir, paste0(refssamples$SampleID,"_quant"), "quant.sf") #get paths to each file.
@@ -58,7 +60,7 @@ countsallrefs <- txi1$counts #For use for later comparisons
 #Merging the two matrices so that transgenes and endogenous genes will be analyzed together
 txitotalrefs <- list(rbind(txi1$abundance, txi$abundance), rbind(txi1$counts, txi$counts), rbind(txi1$length, txi$length), txi1$countsFromAbundance)
 names(txitotalrefs) <- c("abundance","counts","length","countsFromAbundance")
-refssamples$condition <- factor(refssamples$condition, levels = c("A","TT"))
+refssamples$condition <- factor(refssamples$condition, levels = c("A","TT","BB"))
 ddsTxirefs <- DESeqDataSetFromTximport(txitotalrefs,
                                         colData = refssamples,
                                         design = ~ condition)
@@ -66,27 +68,183 @@ keeprefs <- rowMeans(counts(ddsTxirefs)) >= 10 #Removing transcripts with fewer 
 ddsrefs <- ddsTxirefs[keeprefs,]
 ddsrefs <- DESeq(ddsrefs)
 
-refres <- results(ddsrefs)
-refres <- data.frame(refres)
-refres$sig <- ifelse(refres$padj <=0.1 & !is.na(refres$padj), "sig","ns")
-# volcano plot
-ggplot(data = refres, aes(x=log2FoldChange, y=-log(pvalue))) +
-  geom_point(aes(color = sig)) +
-  #geom_text(data = refres[refres$sig == "sig",], aes(x=log2FoldChange, y=-log(pvalue), label = rownames(refres[refres$sig == "sig",]))) +
-  ylab("-Log(pvalue)") +
-  xlab("Log2 Fold Change") +
-  THEMEMAIN()
-  #xlim(-10,10) +
-  #ylim(0,50)
-ggsave("Refvolcano.png", plot = last_plot(), path = figdir, width = 8, height = 8)
-refsDEGs <- refres[refres$padj <= 0.1 & !is.na(refres$padj),]
-write.table(refsDEGs, paste0(outputdir,"/refsDEGs.txt"), sep = "\t")
+#PCA plot
+vsd <- vst(ddsrefs, blind = TRUE)
+PCAstat <- plotPCA(vsd)
+pdf(paste0(figdir,"/PCArefs.pdf"))
+plotPCA(vsd)
+dev.off()
+
+refresmat <- results(ddsrefs, contrast = c("condition","A","TT"))
+refresura <- results(ddsrefs, contrast = c("condition","A","BB"))
+refrescis <- results(ddsrefs, contrast = c("condition","TT","BB"))
+#Identifying the genes that are differentially expressed between the different reference strains
+refresmat <- data.frame(refresmat)
+refresmat$sig <- ifelse(refresmat$padj <=0.1 & !is.na(refresmat$padj), "sig","ns")
+refresura <- data.frame(refresura)
+refresura$sig <- ifelse(refresura$padj <=0.1 & !is.na(refresura$padj), "sig","ns")
+refrescis <- data.frame(refrescis)
+refrescis$sig <- ifelse(refrescis$padj <=0.1 & !is.na(refrescis$padj), "sig","ns")
+
+#Scatterplots
+countsallrefs <- as.data.frame(countsallrefs)
+countsallrefs$matDE <- ifelse(rownames(countsallrefs) %in% c(rownames(refresmat[refresmat$sig == "sig",])), "YES", "NO")
+countsallrefs$uraDE <- ifelse(rownames(countsallrefs) %in% c(rownames(refresura[refresura$sig == "sig",])), "YES", "NO")
+countsallrefs$cisDE <- ifelse(rownames(countsallrefs) %in% c(rownames(refrescis[refrescis$sig == "sig",])), "YES", "NO")
+
+
+#Examples of some representative samples
+#A comparison of two of the same reference strains, as a baseline
+ggplot(data = countsallrefs, aes(x = countsallrefs$`115120` , y = countsallrefs$`114797` )) +
+  geom_point(alpha = 0.5, color = 'red') +
+  xlab("Sample 105212 Counts\n(alpha-type reference)") +
+  ylab("Sample 119981 Counts\n(alpha-type reference)")
+  
+a2 <- ggplot(data = countsallrefs, aes(x = countsallrefs$`105212` , y = countsallrefs$`119984` )) +
+  geom_point(aes(color = countsallrefs$matDE), alpha = 0.5) +
+  scale_color_manual(values = c("red","blue")) +
+  geom_point(data = countsallrefs[countsallrefs$matDE == "YES",], aes(x = `105212`, y = `119984`), color = "blue", alpha = 0.5) +
+  xlab("Sample 105212 Counts\n(alpha-type reference)") +
+  ylab("Sample 119984 Counts\n(a-type reference)") +
+  labs(color = "Significantly \nDifferentially \nExpressed") +
+  theme(legend.position = c(0.1,0.95), legend.justification = c('left', 'top'))
+
+a3 <- ggplot(data = countsallrefs, aes(x = countsallrefs$`105212` , y = countsallrefs$`105230` )) +
+  geom_point(aes(color = countsallrefs$uraDE), alpha = 0.5) +
+  scale_color_manual(values = c("red","blue")) +
+  geom_point(data = countsallrefs[countsallrefs$uraDE == "YES",], aes(x = `105212`, y = `105230`), color = "blue", alpha = 0.5) +
+  xlab("Sample 105212 Counts\n(alpha-type reference)") +
+  ylab("Sample 105230 Counts\n(a-type reference, URA+)") +
+  theme(legend.position = 'none')
+
+a4 <- ggplot(data = countsallrefs, aes(x = countsallrefs$`105230` , y = countsallrefs$`119984` )) +
+  geom_point(aes(color = countsallrefs$cisDE), alpha = 0.5) +
+  scale_color_manual(values = c("red","blue")) +
+  geom_point(data = countsallrefs[countsallrefs$cisDE == "YES",], aes(x = `105230`, y = `119984`), color = "blue", alpha = 0.5) +
+  xlab("Sample 105230 Counts\n(a-type reference, URA+)") +
+  ylab("Sample 119984 Counts\n(a-type reference)") +
+  theme(legend.position = 'none')
+
+b1 <- ggplot(data = countsallrefs, aes(x = countsallrefs$`105212` , y = countsallrefs$`119981` )) +
+  geom_point(alpha = 0.5, color = 'red') +
+  xlab("Sample 105212 Counts\n(alpha-type reference)") +
+  ylab("Sample 119981 Counts\n(alpha-type reference)") +
+  xlim(0,20000) +
+  ylim(0,20000)
+
+b2 <- ggplot(data = countsallrefs, aes(x = countsallrefs$`105212` , y = countsallrefs$`119984` )) +
+  geom_point(aes(color = countsallrefs$matDE), alpha = 0.5) +
+  scale_color_manual(values = c("red","blue")) +
+  geom_point(data = countsallrefs[countsallrefs$matDE == "YES",], aes(x = `105212`, y = `119984`), color = "blue", alpha = 0.5) +
+  xlab("Sample 105212 Counts\n(alpha-type reference)") +
+  ylab("Sample 119984 Counts\n(a-type reference)") +
+  theme(legend.position = 'none') +
+  xlim(0,20000) +
+  ylim(0,20000)
+
+b3 <- ggplot(data = countsallrefs, aes(x = countsallrefs$`105212` , y = countsallrefs$`105230` )) +
+  geom_point(aes(color = countsallrefs$uraDE), alpha = 0.5) +
+  scale_color_manual(values = c("red","blue")) +
+  geom_point(data = countsallrefs[countsallrefs$uraDE == "YES",], aes(x = `105212`, y = `105230`), color = "blue", alpha = 0.5) +
+  xlab("Sample 105212 Counts\n(alpha-type reference)") +
+  ylab("Sample 105230 Counts\n(a-type reference, URA+)") +
+  theme(legend.position = 'none') +
+  xlim(0,20000) +
+  ylim(0,20000)
+
+b4 <- ggplot(data = countsallrefs, aes(x = countsallrefs$`105230` , y = countsallrefs$`119984` )) +
+  geom_point(aes(color = countsallrefs$cisDE), alpha = 0.5) +
+  scale_color_manual(values = c("red","blue")) +
+  geom_point(data = countsallrefs[countsallrefs$cisDE == "YES",], aes(x = `105230`, y = `119984`), color = "blue", alpha = 0.5) +
+  xlab("Sample 105230 Counts\n(a-type reference, URA+)") +
+  ylab("Sample 119984 Counts\n(a-type reference)") +
+  theme(legend.position = 'none') +
+  xlim(0,20000) +
+  ylim(0,20000)
+
+plot_grid(a1,a2,a3,a4,b1,b2,b3,b4, ncol = 4, labels = 'auto')
+ggsave("samplecompare.pdf", plot = last_plot(), path = figdir, width = 14, height = 8)
+
+#Adding all samples together and calculating counts per million to compare references across all samples
+countsallrefssum <- cbind(c(rowSums(countsallrefs[,colnames(countsallrefs) %in% samples[samples$condition == "A","SampleID"]])),
+                          c(rowSums(countsallrefs[,colnames(countsallrefs) %in% samples[samples$condition == "TT","SampleID"]])),
+                          c(rowSums(countsallrefs[,colnames(countsallrefs) %in% samples[samples$condition == "BB","SampleID"]])),
+                          countsallrefs[,c("uraDE","matDE","cisDE")])
+colnames(countsallrefssum) <- c("alpha_type","a_type","ura_pos","uraDE","matDE","cisDE")
+CPMsecond <- data.frame(countsallrefssum)
+for (i in 1:ncol(countsallrefssum[,1:3])) {
+  CPMsecond[,i] <- countsallrefssum[,i]/sum(countsallrefssum[,i])*1000000
+}
+
+
+ggplot(data = CPMsecond, aes(x = alpha_type, y = a_type)) +
+  geom_point(aes(color = matDE), alpha = 0.5) +
+  scale_color_manual(values = c("red","blue")) +
+  geom_point(data = CPMsecond[CPMsecond$matDE == "YES",], aes(x = alpha_type, y = a_type), color = "blue", alpha = 0.5) +
+  xlab("") +
+  ylab("") +
+  theme(legend.position = 'none')
+
+ggplot(data = CPMsecond, aes(x = alpha_type, y = ura_pos)) +
+  geom_point(aes(color = uraDE), alpha = 0.5) +
+  scale_color_manual(values = c("red","blue")) +
+  geom_point(data = CPMsecond[CPMsecond$uraDE == "YES",], aes(x = alpha_type, y = ura_pos), color = "blue", alpha = 0.5) +
+  xlab("") +
+  ylab("") +
+  theme(legend.position = 'none')
+
+ggplot(data = CPMsecond, aes(x = ura_pos, y = a_type)) +
+  geom_point(aes(color = cisDE), alpha = 0.5) +
+  scale_color_manual(values = c("red","blue")) +
+  geom_point(data = CPMsecond[CPMsecond$cisDE == "YES",], aes(x = ura_pos, y = a_type), color = "blue", alpha = 0.5) +
+  xlab("") +
+  ylab("") +
+  theme(legend.position = 'none')
+
+f1 <- ggplot(data = CPMsecond, aes(x = alpha_type, y = a_type)) +
+  geom_point(aes(color = matDE), alpha = 0.5) +
+  scale_color_manual(values = c("red","blue")) +
+  geom_point(data = CPMsecond[CPMsecond$matDE == "YES",], aes(x = alpha_type, y = a_type), color = "blue", alpha = 0.5) +
+  xlab("All alpha references\n(Counts per Million)") +
+  ylab("All a references\n(Counts per Million)") +
+  theme(legend.position = 'none') +
+  xlim(0,2500) +
+  ylim(0,2500)
+
+f2 <- ggplot(data = CPMsecond, aes(x = alpha_type, y = ura_pos)) +
+  geom_point(aes(color = uraDE), alpha = 0.5) +
+  scale_color_manual(values = c("red","blue")) +
+  geom_point(data = CPMsecond[CPMsecond$uraDE == "YES",], aes(x = alpha_type, y = ura_pos), color = "blue", alpha = 0.5) +
+  xlab("All alpha references\n(Counts per Million)") +
+  ylab("All ura+ references\n(Counts per Million)") +
+  theme(legend.position = 'none') +
+  xlim(0,2500) +
+  ylim(0,2500)
+
+f3 <- ggplot(data = CPMsecond, aes(x = ura_pos, y = a_type)) +
+  geom_point(aes(color = cisDE), alpha = 0.5) +
+  scale_color_manual(values = c("red","blue")) +
+  geom_point(data = CPMsecond[CPMsecond$cisDE == "YES",], aes(x = ura_pos, y = a_type), color = "blue", alpha = 0.5) +
+  xlab("All ura+ references\n(Counts per Million)") +
+  ylab("All a references\n(Counts per Million)") +
+  theme(legend.position = 'none') +
+  xlim(0,2500) +
+  ylim(0,2500)
+
+plot_grid(f1,f2,f3, ncol = 3, labels = c('A','B','C'))
+ggsave("CPMsecondcompare.pdf", plot = last_plot(), path = figdir, width = 15, height = 5)
+
+
+#Identifying the genes that need to be removed from the dataset, based on differences between references
+refsDEGnames <- c(rownames(refrescis[refrescis$sig == 'sig',]),rownames(refresmat[refresmat$sig == 'sig',]),rownames(refresura[refresura$sig == 'sig',]))
+refsDEGnames <- unique(refsDEGnames) #There are a total of 167 genes to be removed
 
 ###################
 ##Model for the auramsamples
 ###################
-#Weeding out some outliers
+#Weeding out the outliers
 auramsamples <- auramsamples[auramsamples$batch != "G",]
+
 #Reading in the data for the transgenes present
 files <- file.path(dir, paste0(auramsamples$SampleID,"_quant"), "quant.sf") #get paths to each file.
 names(files) <- auramsamples$SampleID
@@ -110,6 +268,11 @@ countsallauram <- txi1$counts #For use for later comparisons
 txitotalauram <- list(rbind(txi1$abundance, txi$abundance), rbind(txi1$counts, txi$counts), rbind(txi1$length, txi$length), txi1$countsFromAbundance)
 names(txitotalauram) <- c("abundance","counts","length","countsFromAbundance")
 auramsamples$condition <- factor(auramsamples$condition, levels = c("TT","M","GG","B","C","K"))
+#Removing the mating type and ura associated genes
+txitotalauram$abundance <- txitotalauram$abundance[!rownames(txitotalauram$abundance) %in% refsDEGnames,]
+txitotalauram$counts <- txitotalauram$counts[!rownames(txitotalauram$counts) %in% refsDEGnames,]
+txitotalauram$length <- txitotalauram$length[!rownames(txitotalauram$length) %in% refsDEGnames,]
+
 ddsTxiauram <- DESeqDataSetFromTximport(txitotalauram,
                                     colData = auramsamples,
                                     design = ~ condition)
@@ -127,7 +290,6 @@ dev.off()
 ##############################
 ##Modeling the aurapsamples
 #######################
-#aurapsamples <- aurapsamples[aurapsamples$batch != "G",]
 files <- file.path(dir, paste0(aurapsamples$SampleID,"_quant"), "quant.sf") #get paths to each file.
 names(files) <- aurapsamples$SampleID
 all(file.exists(files)) #Check that all files are findable
@@ -144,6 +306,11 @@ countsallaurap <- txi1$counts #For use for later comparisons
 #Merging the two matrices so that transgenes and endogenous genes will be analyzed together
 txitotalaurap <- list(rbind(txi1$abundance, txi$abundance), rbind(txi1$counts, txi$counts), rbind(txi1$length, txi$length), txi1$countsFromAbundance)
 names(txitotalaurap) <- c("abundance","counts","length","countsFromAbundance")
+#Removing the mating type and ura associated genes
+txitotalaurap$abundance <- txitotalaurap$abundance[!rownames(txitotalaurap$abundance) %in% refsDEGnames,]
+txitotalaurap$counts <- txitotalaurap$counts[!rownames(txitotalaurap$counts) %in% refsDEGnames,]
+txitotalaurap$length <- txitotalaurap$length[!rownames(txitotalaurap$length) %in% refsDEGnames,]
+
 aurapsamples$condition <- as.factor(aurapsamples$condition)
 ddsTxiaurap <- DESeqDataSetFromTximport(txitotalaurap,
                                    colData = aurapsamples,
@@ -180,6 +347,11 @@ countsallalpha <- txi1$counts #For use for later comparisons
 #Merging the two matrices so that transgenes and endogenous genes will be analyzed together
 txitotalalpha <- list(rbind(txi1$abundance, txi$abundance), rbind(txi1$counts, txi$counts), rbind(txi1$length, txi$length), txi1$countsFromAbundance)
 names(txitotalalpha) <- c("abundance","counts","length","countsFromAbundance")
+#Removing the mating type and ura associated genes
+txitotalalpha$abundance <- txitotalalpha$abundance[!rownames(txitotalalpha$abundance) %in% refsDEGnames,]
+txitotalalpha$counts <- txitotalalpha$counts[!rownames(txitotalalpha$counts) %in% refsDEGnames,]
+txitotalalpha$length <- txitotalalpha$length[!rownames(txitotalalpha$length) %in% refsDEGnames,]
+
 alphasamples$condition <- as.factor(alphasamples$condition)
 ddsTxialpha <- DESeqDataSetFromTximport(txitotalalpha,
                                         colData = alphasamples,
@@ -196,8 +368,7 @@ plotPCA(vsd)
 dev.off()
 
 #Saving the environment for later use.
-save.image("~/Documents/Output/Projects/Pleiotropy/DEworkspace/separatenooutliers.RData")
-
+save.image("~/Documents/Output/Projects/Pleiotropy/DEworkspace/separatenooutliersmatremov.RData")
 
 
 ##Now doing contrasts between each sample and its respective reference
@@ -219,18 +390,19 @@ for (i in 1:length(alphaIDs)) {
   assign(alphaIDs[i], x)
 }
 
-save.image("~/Documents/Output/Projects/Pleiotropy/DEworkspace/separatenooutlierspostcontrast.RData")
+save.image("~/Documents/Output/Projects/Pleiotropy/DEworkspace/separatenooutliersmatremovpostcontrast.RData")
 
 #Reading out processed files for upload to GEO
+resubdir <- "/Users/petravandezande/Documents/Output/Projects/Pleiotropy/Combined/4.0/Resubmission"
 countstogether <- cbind(countsallalpha, countsallauram, countsallaurap)
-write.table(countstogether, paste0(outputdir,"/counts_matrix_all.txt"),sep = "\t")
+write.table(countstogether, paste0(resubdir,"/counts_matrix_all.txt"),sep = "\t")
 
-for (i in 29:length(samplesvec)) {
+for (i in 1:length(samplesvec)) {
   readout <- as.data.frame(get(samplesvec[i]))
-  write.table(readout, paste0(outputdir,"/Strain_",unique(samples[samples$condition == samplesvec[i],"Description"]),".txt"), sep = "\t")
+  write.table(readout, paste0(resubdir,"/Strain_",unique(samples[samples$condition == samplesvec[i],"Description"]),".txt"), sep = "\t")
 }
 readout <- as.data.frame(get("Q"))
-write.table(readout, paste0(outputdir,"/Strain_3287.txt"), sep = "\t")
+write.table(readout, paste0(resubdir,"/Strain_3287.txt"), sep = "\t")
 
 ##########################################
 ###2. Comparison of TDH3 values expected based on fluorescence and RNA seq estimates
