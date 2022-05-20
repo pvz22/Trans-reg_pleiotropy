@@ -146,7 +146,7 @@ ggplot(data = growthstats[growthstats$condition %in% transvec,], aes(x = (2^(TDH
   geom_errorbarh(data = growthstats[growthstats$condition %in% transvec,], aes(xmin = (2^(TDH3level - TDH3SE)), xmax = (2^(TDH3level + TDH3SE)), color = GPSIG)) +
   THEMEMAIN() +
   theme(legend.position = "none") +
-  xlab("TDH3 Expression\n(% Wild Type)") +
+  xlab("TDH3 expression\n(% Wild Type)") +
   ylab("Pleiotropic Fitness") +
   scale_x_continuous(labels = scales::percent)
 #geom_text() #To look at strain identities
@@ -252,7 +252,7 @@ ggplot(data = growthstats[growthstats$condition %in% c(transvec,cissamplesvec),]
   xlab("Number of DEGs") +
   ylab("Relative Fitness") +
   theme(legend.position = 'none')
-  #geom_text()
+#geom_text()
 ggsave("DEGsvsgrowth.pdf", plot = last_plot(), path = figdir, width = 8, height = 8)
 growthmod <- lm(growthstats[growthstats$condition %in% c(transvec,cissamplesvec),"REL.r.u"] ~ growthstats[growthstats$condition %in% c(transvec,cissamplesvec),"DEGs"])
 summary(growthmod) #p-value: 2.1e-9, Rsquared: 0.6351
@@ -316,7 +316,7 @@ ggplot(data = growthstats[growthstats$condition %in% transvec,], aes(x = TDH3per
   xlab("TDH3 Expression Level\n(% Wild Type)") +
   ylab("Number of DE Genes\n(Log10)") +
   theme(legend.position = "none")
-  #ylim(0,4) #Again, to use if you want to plot just cis alone
+#ylim(0,4) #Again, to use if you want to plot just cis alone
 ggsave("TDH3vsDEGs.pdf", plot = last_plot(), path = figdir, width = 8, height = 8)
 
 ############################
@@ -902,8 +902,8 @@ ggsave("TDH3vsGPD2trans.pdf", plot = last_plot(), path = figdir, width = 8, heig
 
 #What do the residuals look like for genes that are differentially expressed in that trans mutant and those that are not?
 for (i in 1:nrow(transresidmelt)) {
-    x <- get(growthstats[growthstats$nickname == transresidmelt[i,"variable"],"condition"])
-    transresidmelt[i,"DEintrans"] <- ifelse(transresidmelt[i,"Gene"] %in% rownames(x[x$padj <= 0.1 & !is.na(x$padj),]), "DE","notDE")
+  x <- get(growthstats[growthstats$nickname == transresidmelt[i,"variable"],"condition"])
+  transresidmelt[i,"DEintrans"] <- ifelse(transresidmelt[i,"Gene"] %in% rownames(x[x$padj <= 0.1 & !is.na(x$padj),]), "DE","notDE")
 }
 table(transresidmelt$PREDINT, transresidmelt$DEintrans) 
 #       DE notDE
